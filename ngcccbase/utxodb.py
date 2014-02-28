@@ -31,7 +31,7 @@ import sqlite3
 import urllib2
 import json
 
-DEFAULT_ELECTRUM_SERVER = "btc.it-zone.org"
+DEFAULT_ELECTRUM_SERVER = "electrum.datemas.de"
 DEFAULT_ELECTRUM_PORT = 50001
 
 

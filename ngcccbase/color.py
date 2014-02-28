@@ -42,7 +42,7 @@ class ColoredCoinContext(object):
             except Exception as e:
                 # use Electrum to request transactions
                 self.blockchain_state = EnhancedBlockchainState(
-                    "electrum.cafebitcoin.com", 50001)
+                    "electrum.datemas.de", 50001)
 
         self.store_conn = DataStoreConnection(
             params.get("colordb_path", "color.db"))
