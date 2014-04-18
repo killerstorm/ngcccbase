@@ -45,6 +45,7 @@ class ElectrumInterface(object):
         self.debug = debug
         self.is_connected = False
         self.q = Queue.Queue()
+        self.pending_responses = {}
         self.connect()
         self.t = threading.Thread(target=self.grab_responses)
         self.t.daemon = True
@@ -132,22 +133,23 @@ class ElectrumInterface(object):
             return None                            # pragma: no cover
         return current_id
 
-    def get_response(self, target_id, blocking=False):
-        id, raw = self.q.get(blocking)
-        while id:
-            if id == target_id:
-                return raw
-            try:
-                self.q.put(id, raw)
-                id, raw = self.q.get(blocking)
-            except:
-                id = None
-        return None
+    def get_async_response(self, target_id, blocking=True):
+        if target_id in self.pending_responses:
+            return self.pending_responses.pop(target_id)
+        try:
+            resp_id, raw = self.q.get(blocking)
+            while resp_id:
+                if resp_id == target_id:
+                    return raw
+                else:
+                    self.pending_responses[resp_id] = raw
+                resp_id, raw = self.q.get(blocking)
+        except queue.Empty:
+            return None
 
-    def get_immediate_response(self, method, params):
+    def get_response(self, method, params):
         target_id = self.add_request(method, params)
-        response = self.get_response(target_id, True)
-        self.q.task_done()
+        response = self.get_async_response(target_id, True)
         return response
 
     def get_version(self):
@@ -178,7 +180,7 @@ class ElectrumInterface(object):
         """Gets all the Unspent Transaction Outs from a given <address>
         """
         script_pubkey = CBitcoinAddress(address).to_scriptPubKey()
-        txs = self.get_immediate_response('blockchain.address.get_history', [address])
+        txs = self.get_response('blockchain.address.get_history', [address])
         if not txs:
             return []
         spent = {}
@@ -192,7 +194,7 @@ class ElectrumInterface(object):
             ids.append((id,tx))
             
         for id, tx in ids:
-            raw = self.get_response(id, True)
+            raw = self.get_async_response(id, True)
             if tx:
                 data = CTransaction.deserialize(to_binary(raw))
                 for vin in data.vin:
@@ -202,7 +204,6 @@ class ElectrumInterface(object):
                     if vout.scriptPubKey == script_pubkey:
                         utxos += [(tx['tx_hash'], outindex, vout.nValue,
                                    to_hex(vout.scriptPubKey))]
-                self.q.task_done()
         return [u for u in utxos if not u[0:2] in spent]
 
 
@@ -230,7 +231,7 @@ class EnhancedBlockchainState(blockchain.BlockchainState):
         class, BlockchainStatus, uses get_raw_transaction to get
         the height, which would cause a circular dependency.
         """
-        url = "http://blockchain.info/rawtx/%s" % txhash
+        url = "https://blockchain.info/rawtx/%s" % txhash
         jsonData = urllib2.urlopen(url).read()
         if jsonData[0] != '{':
             return (None, False)  # pragma: no cover
